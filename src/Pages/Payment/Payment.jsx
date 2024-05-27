@@ -14,25 +14,19 @@ import { Type } from "../../Utility/action.type";
 function Payment() {
   const [{ user, basket }, dispatch] = useContext(DataContext);
 
-  // Debugging logs
-  console.log("User:", user);
-  console.log("Basket:", basket);
-
   const totalItem = basket?.reduce((amount, item) => {
     return item.amount + amount;
   }, 0);
   const total = basket.reduce((amount, item) => {
     return item.price * item.amount + amount;
-  }, 0); // Added 0 as the initial value
-
-  // Debugging logs
-  console.log("Total items:", totalItem);
+  }, 0);
 
   const [cardError, setCardError] = useState(null);
   const [processing, setProcessing] = useState(false);
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
+
   const handleChange = (e) => {
     e?.error?.message ? setCardError(e?.error?.message) : setCardError("");
   };
@@ -41,18 +35,29 @@ function Payment() {
     e.preventDefault();
     try {
       setProcessing(true);
+      console.log("Processing payment...");
+
       // 1. backend || functions ----> contact to the client secret
       const response = await axiosInstance({
         method: "POST",
         url: `/payment/create?total=${total * 100}`,
       });
+
+      console.log("Client secret response:", response.data);
       const clientSecret = response.data?.clientSecret;
+
       // 2. client side {react side confirmation}
       const { paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
           card: elements.getElement(CardElement),
         },
       });
+
+      if (!paymentIntent) {
+        throw new Error("Payment intent not received");
+      }
+
+      console.log("Payment intent:", paymentIntent);
 
       // 3. After confirmation --> order firestore database save, clear basket
       await db
@@ -65,27 +70,30 @@ function Payment() {
           amount: paymentIntent.amount,
           created: paymentIntent.created,
         });
-      // empty the basket
+
+      console.log("Order saved to database");
+
+      // Empty the basket
       dispatch({ type: Type.EMPTY_BASKET });
-      setProcessing(false);
-      navigate("/orders", { state: { msg: "You have placed new Order" } });
+      console.log("Basket emptied");
+
+      // Navigate to orders page
+      navigate("/orders", { state: { msg: "You have placed a new Order" } });
+      console.log("Navigation to orders page");
     } catch (error) {
-      console.log(error);
+      console.log("Error in payment processing:", error);
       setProcessing(false);
     }
-
-    console.log(response.data);
   };
+
   return (
     <LayOut>
-      <div className={classes.payment_header}>
-        CheckOut ({totalItem}) items {/* Corrected this line */}
-      </div>
+      <div className={classes.payment_header}>CheckOut ({totalItem}) items</div>
       <section className={classes.payment}>
         <div className={classes.flex}>
           <h3>Delivery Address</h3>
           <div>
-            <div>{user?.email}</div> {/* Added optional chaining */}
+            <div>{user?.email}</div>
             <div>123 React Lane</div>
             <div>Addis Ababa, Ethiopia</div>
           </div>
@@ -105,13 +113,10 @@ function Payment() {
           <div className={classes.payment_card_container}>
             <div className={classes.payment_detailes}>
               <form onSubmit={handlePayment}>
-                {/* Payment Form from Stripe */}
                 {cardError && (
                   <small style={{ color: "red" }}>{cardError}</small>
                 )}
                 <CardElement onChange={handleChange} />
-
-                {/*  price*/}
                 <div className={classes.payment_price}>
                   <div>
                     <span style={{ display: "flex", gap: "10px" }}>
